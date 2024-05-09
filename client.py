@@ -9,6 +9,7 @@ import numpy as np
 SERVER_HOST = '40.127.9.222'
 SERVER_PORT = 12345
 
+img = None
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client_socket.connect((SERVER_HOST, SERVER_PORT))
 
@@ -21,10 +22,11 @@ def create_form_elements(root):
     file_entry = Entry(root, state='readonly')
     file_button = Button(root, text="Browse", command=lambda: browse_file(file_entry), background="white",
                          highlightbackground="white", highlightcolor="white")
-    upload_button = Button(root, text="Upload File", command=lambda: upload_file(file_entry, selected_option),
+    upload_button = Button(root, text="Upload File", command=lambda: upload_file(file_entry,selected_option),
                            background="white",
                            highlightbackground="white", highlightcolor="white")
-    download_button = Button(root, text="Download Image", background="white", highlightbackground="white",
+    download_button = Button(root, text="Download Image", command=lambda: download_image(img), background="white",
+                             highlightbackground="white",
                              highlightcolor="white")
 
     options = ["edge_detection", "color_inversion"]
@@ -49,63 +51,98 @@ def browse_file(file_entry):
 
 
 def upload_file(file_entry, selected_option):
-    file_paths = file_entry.get()
+    global img
+    file_paths = file_entry.get().split('\n')
     selected_option_value = selected_option.get()
+
     if file_paths:
+
         try:
-            f = open(file_paths, 'rb')
-            n = f.read(1048576)
             client_socket.sendall(selected_option_value.encode())
-            while n:
-                client_socket.sendall(n)
-                n = f.read(1048576)
+            for file_path in file_paths:
+                with open(file_path, 'rb') as f:
+                    while True:
+                        data = f.read(1024)
+                        if not data:
+                            break
+                        client_socket.sendall(data)
+                    client_socket.sendall(b'SPLITER')
 
             client_socket.shutdown(socket.SHUT_WR)
-
             print('Sent full data')
             full_result = b''
-            result = client_socket.recv(1048576)
-
-            while result:
-                full_result += result
+            while True:
+                result = client_socket.recv(1024)
                 if not result:
                     break
-                result = client_socket.recv(1048576)
+                full_result += result
 
-            nparr = np.frombuffer(full_result, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            print(nparr)
-            print(img)
+            images_split = full_result.split(b"END_OF_IMAGE")
+            for img_data in images_split:
+                if img_data:
+                    nparr = np.frombuffer(img_data, np.uint8)
+                    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        cv2.imshow('Processed Image', img)
+                        cv2.waitKey(0)
+                        cv2.destroyAllWindows()
+                        showinfo("Success", "Files have been uploaded and displayed.")
+                    else:
+                        showinfo("Error", "Failed to decode image.")
 
-            # Display the processed image
-            cv2.imshow('Processed Image', img)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-
-            # Process the results if needed
-            showinfo("Success", "Files have been uploaded.")
         except FileNotFoundError as e:
             showinfo("Error", f"File not found: {e}")
         except OSError as e:
-            if e.errno == 10058:
+            if e.errno == 10058 or e.errno == 10057 or e.errno == 10053:
                 showinfo("Error", "Reconnecting to the Server...\n You can upload now!")
+                reconnect_to_server()
             else:
                 showinfo("Error", f"An error occurred: {e}. Please reconnect to the server.")
+                reconnect_to_server()
+        except BrokenPipeError as e:
             reconnect_to_server()
-
     else:
         showinfo("Error", "Please select one or more files to upload.")
 
 
+def download_image(img):
+    """
+    Download the processed image.
+    """
+    file_extension = ".jpg"
+    if img is None:
+        showinfo("Error", "Please select an image to download.")
+        return
+    elif img.size == 0:  # Check if the image array is empty
+        showinfo("Error", "The image array is empty.")
+        return
+    else:
+        save_path = filedialog.asksaveasfilename(defaultextension=file_extension, filetypes=[("Image files", ".")])
+        if save_path:
+            cv2.imwrite(save_path, img)
+            showinfo("Success", "Image has been downloaded.")
+        else:
+            showinfo("Error", "No save path selected.")
+
+
+
+
 def reconnect_to_server():
+    print("Trying to reconnect...")
     global client_socket
+
     try:
+        # Close the socket if it's still open
         client_socket.shutdown(socket.SHUT_RDWR)
         client_socket.close()
+        print("Closed existing connection")
     except Exception as e:
         print(f"Error closing existing connection: {e}")
 
-    # Reconnect to the server
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((SERVER_HOST, SERVER_PORT))
-    print("Reconnected to the server")
+    try:
+        # Reconnect to the server
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((SERVER_HOST, SERVER_PORT))
+        print("Reconnected to the server")
+    except Exception as e:
+        print(f"Error reconnecting to server: {e}")
