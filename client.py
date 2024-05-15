@@ -1,3 +1,4 @@
+import json
 from tkinter import *
 from tkinter import filedialog
 from tkinter.messagebox import showinfo
@@ -6,7 +7,7 @@ import socket
 import cv2
 import numpy as np
 
-SERVER_HOST = '40.127.9.222'
+SERVER_HOST = "40.127.9.222"
 SERVER_PORT = 12345
 
 img = None
@@ -19,17 +20,34 @@ def create_form_elements(root):
     Create form elements such as labels, buttons, and entry fields.
     """
     file_label = Label(root, text="File:", background="#0078D4", font="bold")
-    file_entry = Entry(root, state='readonly')
-    file_button = Button(root, text="Browse", command=lambda: browse_file(file_entry), background="white",
-                         highlightbackground="white", highlightcolor="white")
-    upload_button = Button(root, text="Upload File", command=lambda: upload_file(file_entry,selected_option),
-                           background="white",
-                           highlightbackground="white", highlightcolor="white")
-    download_button = Button(root, text="Download Image", command=lambda: download_image(img), background="white",
-                             highlightbackground="white",
-                             highlightcolor="white")
+    file_entry = Entry(root, state="readonly")
+    file_button = Button(
+        root,
+        text="Browse",
+        command=lambda: browse_file(file_entry),
+        background="white",
+        highlightbackground="white",
+        highlightcolor="white",
+    )
+    upload_button = Button(
+        root,
+        text="Upload File",
+        command=lambda: upload_file(file_entry, selected_option),
+        background="white",
+        highlightbackground="white",
+        highlightcolor="white",
+    )
+    download_button = Button(
+        root,
+        text="Download Image",
+        command=lambda: download_image(img),
+        background="white",
+        highlightbackground="white",
+        highlightcolor="white",
+    )
 
-    options = ["edge_detection", "color_inversion"]
+    options = ["edge_detection", "color_inversion", "erosion", "dilation", "adaptive_threshold",
+               "histogram_equalization", "sharpen", "gaussian_blur", "enhance"]
     selected_option = StringVar()
     selected_option.set(options[0])
     option_menu = OptionMenu(root, selected_option, *options)
@@ -44,51 +62,50 @@ def create_form_elements(root):
 def browse_file(file_entry):
     file_paths = filedialog.askopenfilenames()
     if file_paths:
-        file_entry.config(state='normal')
-        file_entry.delete(0, 'end')
-        file_entry.insert(0, '\n'.join(file_paths))
-        file_entry.config(state='readonly')
+        file_entry.config(state="normal")
+        file_entry.delete(0, "end")
+        file_entry.insert(0, "\n".join(file_paths))
+        file_entry.config(state="readonly")
 
 
 def upload_file(file_entry, selected_option):
     global img
-    file_paths = file_entry.get().split('\n')
-    selected_option_value = selected_option.get()
+    file_paths = file_entry.get().split("\n")
+    client_socket.sendall(selected_option.get().encode())
 
     if file_paths:
-
         try:
-            client_socket.sendall(selected_option_value.encode())
-            for file_path in file_paths:
-                with open(file_path, 'rb') as f:
-                    while True:
-                        data = f.read(1024)
-                        if not data:
-                            break
-                        client_socket.sendall(data)
-                    client_socket.sendall(b'SPLITER')
+            # Send number of images
+            client_socket.sendall(len(file_paths).to_bytes(8, byteorder="big"))
+            images = [cv2.imread(file_path) for file_path in file_paths]
+            image_sizes = [img.shape[0:2] for img in images]
+            for img in images:
+                # Send number of rows in image
+                client_socket.sendall(img.shape[0].to_bytes(8, byteorder="big"))
+                # Send number of columns in image
+                client_socket.sendall(img.shape[1].to_bytes(8, byteorder="big"))
 
-            client_socket.shutdown(socket.SHUT_WR)
-            print('Sent full data')
-            full_result = b''
-            while True:
-                result = client_socket.recv(1024)
-                if not result:
-                    break
-                full_result += result
+                # Send image as bytes
+                client_socket.sendall(img.astype(np.ubyte).tobytes())
 
-            images_split = full_result.split(b"END_OF_IMAGE")
-            for img_data in images_split:
-                if img_data:
-                    nparr = np.frombuffer(img_data, np.uint8)
-                    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    if img is not None:
-                        cv2.imshow('Processed Image', img)
-                        cv2.waitKey(0)
-                        cv2.destroyAllWindows()
-                        showinfo("Success", "Files have been uploaded and displayed.")
-                    else:
-                        showinfo("Error", "Failed to decode image.")
+            print("Sent full data")
+            images_array = []
+            for i in range(len(images)):
+                rows, cols = image_sizes[i]
+                bytes_no = rows * cols * 3
+                raw_image = b""
+                while len(raw_image) < bytes_no:
+                    bytes_remaining = bytes_no - len(raw_image)
+                    bytes_to_recv = 4096 if bytes_remaining > 4096 else bytes_remaining
+                    raw_image += client_socket.recv(bytes_to_recv)
+                images_array.append(np.frombuffer(raw_image, dtype=np.ubyte).reshape(rows, cols, 3).astype(np.uint8))
+
+            for img in images_array:
+                # Display the concatenated image
+                cv2.imshow("Processed Image", img)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+                showinfo("Success", "Files have been uploaded and displayed.")
 
         except FileNotFoundError as e:
             showinfo("Error", f"File not found: {e}")
@@ -123,8 +140,6 @@ def download_image(img):
             showinfo("Success", "Image has been downloaded.")
         else:
             showinfo("Error", "No save path selected.")
-
-
 
 
 def reconnect_to_server():
