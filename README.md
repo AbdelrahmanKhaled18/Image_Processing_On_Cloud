@@ -10,8 +10,8 @@ After the processing is done, the MasterNode recives the processed chunks from t
 ## Packges installation 
 * openCV: it is used for image processing 
 * numpy: it is used for data manipulation and converting the images into something can be processed and sent using sockets 
-* sockets: used for connection between client and server 
-* MPI: used for parallell processing 
+* socket: used for connection between client and server 
+* mpi4py: used for parallell processing 
 * tkinter: used for the GUI
 
 ## Cloud enviroment setup
