@@ -28,7 +28,10 @@ After the processing is done, the MasterNode recives the processed chunks from t
 * in your VMs put the server file 
 * run your MPI program using mpixexc 
 * choose photo to upload and an operation to do 
-* press the Upload button 
+* press the Upload button
+
+# Youtube Video Demo
+* https://youtu.be/7I3FAsmqmIs
 
 
 
