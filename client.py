@@ -10,7 +10,7 @@ import numpy as np
 SERVER_HOST = "40.127.9.222"
 SERVER_PORT = 12345
 
-img = None
+imgs = []
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client_socket.connect((SERVER_HOST, SERVER_PORT))
 
@@ -40,7 +40,7 @@ def create_form_elements(root):
     download_button = Button(
         root,
         text="Download Image",
-        command=lambda: download_image(img),
+        command=lambda: download_images(imgs),
         background="white",
         highlightbackground="white",
         highlightcolor="white",
@@ -69,12 +69,12 @@ def browse_file(file_entry):
 
 
 def upload_file(file_entry, selected_option):
-    global img
-    file_paths = file_entry.get().split("\n")
-    client_socket.sendall(selected_option.get().encode())
+    global imgs
+    file_paths = file_entry.get().strip().split("\n")
 
-    if file_paths:
+    if file_paths and any(file_paths):
         try:
+            client_socket.sendall(selected_option.get().encode())
             # Send number of images
             client_socket.sendall(len(file_paths).to_bytes(8, byteorder="big"))
             images = [cv2.imread(file_path) for file_path in file_paths]
@@ -89,7 +89,7 @@ def upload_file(file_entry, selected_option):
                 client_socket.sendall(img.astype(np.ubyte).tobytes())
 
             print("Sent full data")
-            images_array = []
+            imgs = []  # Reset the list of images
             for i in range(len(images)):
                 rows, cols = image_sizes[i]
                 bytes_no = rows * cols * 3
@@ -98,14 +98,14 @@ def upload_file(file_entry, selected_option):
                     bytes_remaining = bytes_no - len(raw_image)
                     bytes_to_recv = 4096 if bytes_remaining > 4096 else bytes_remaining
                     raw_image += client_socket.recv(bytes_to_recv)
-                images_array.append(np.frombuffer(raw_image, dtype=np.ubyte).reshape(rows, cols, 3).astype(np.uint8))
+                imgs.append(np.frombuffer(raw_image, dtype=np.ubyte).reshape(rows, cols, 3).astype(np.uint8))
 
-            for img in images_array:
+            for img in imgs:
                 # Display the concatenated image
                 cv2.imshow("Processed Image", img)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-                showinfo("Success", "Files have been uploaded and displayed.")
+            showinfo("Success", "Files have been uploaded and displayed.")
 
         except FileNotFoundError as e:
             showinfo("Error", f"File not found: {e}")
@@ -120,26 +120,33 @@ def upload_file(file_entry, selected_option):
             reconnect_to_server()
     else:
         showinfo("Error", "Please select one or more files to upload.")
+        return
 
 
-def download_image(img):
+def download_images(images):
     """
-    Download the processed image.
+    Download the processed images.
     """
-    file_extension = ".jpg"
-    if img is None:
-        showinfo("Error", "Please select an image to download.")
+    if not images:
+        showinfo("Error", "No images to download.")
         return
-    elif img.size == 0:  # Check if the image array is empty
-        showinfo("Error", "The image array is empty.")
-        return
-    else:
-        save_path = filedialog.asksaveasfilename(defaultextension=file_extension, filetypes=[("Image files", ".")])
-        if save_path:
+
+    valid_extensions = [".jpg", ".jpeg", ".png"]
+    for i, img in enumerate(images):
+        file_extension = ".jpg"  # Default file extension
+        save_path = filedialog.asksaveasfilename(defaultextension=file_extension,
+                                                 filetypes=[("JPEG files", "*.jpg"), ("PNG files", "*.png"),
+                                                            ("All files", "*.*")])
+
+        # Ensure the save_path has a valid extension
+        if not any(save_path.lower().endswith(ext) for ext in valid_extensions):
+            save_path += file_extension  # Default to .jpg if no valid extension is found
+
+        try:
             cv2.imwrite(save_path, img)
-            showinfo("Success", "Image has been downloaded.")
-        else:
-            showinfo("Error", "No save path selected.")
+            showinfo("Success", f"Image {i + 1} has been downloaded.")
+        except cv2.error as e:
+            showinfo("Error", f"Failed to save image {i + 1}: {e}")
 
 
 def reconnect_to_server():

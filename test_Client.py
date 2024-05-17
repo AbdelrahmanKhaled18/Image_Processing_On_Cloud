@@ -12,7 +12,7 @@ img = None
 class TestPeerMain(unittest.TestCase):
     def setUp(self):
         # Set up the server connection
-        self.host = 'localhost'
+        self.host = "40.127.9.222"
         self.port = 12345
         self.tcpClientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcpClientSocket.connect((self.host, self.port))
@@ -26,7 +26,7 @@ class TestPeerMain(unittest.TestCase):
         self.assertTrue(self.tcpClientSocket.fileno() != -1)
         reconnect_to_server()
 
-    @patch('Client.client_socket')
+    @patch('client.client_socket')
     def test_upload_file(self, mock_client_socket):
 
         if img:
@@ -42,7 +42,7 @@ class TestPeerMain(unittest.TestCase):
             mock_cv2 = Mock()
             mock_cv2.imread.side_effect = [img_mock, img_mock]
 
-            with patch('Client.cv2', mock_cv2):
+            with patch('client.cv2', mock_cv2):
                 # Call the function
                 upload_file(file_entry, selected_option)
         else:
@@ -50,7 +50,7 @@ class TestPeerMain(unittest.TestCase):
             self.assertTrue(self.tcpClientSocket.fileno() != -1)
             reconnect_to_server()
 
-    @patch('Client.filedialog.asksaveasfilename', return_value="saved_image.jpg")
+    @patch('client.filedialog.asksaveasfilename', return_value="saved_image.jpg")
     def test_download_image(self, mock_asksaveasfilename):
         # Mock the cv2.imwrite function
         with patch('cv2.imwrite') as mock_imwrite:
